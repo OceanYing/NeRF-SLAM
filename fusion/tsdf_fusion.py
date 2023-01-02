@@ -25,7 +25,7 @@ class TsdfFusion:
     def __init__(self, name, args, device) -> None:
         self.device = device
 
-        self.debug = False
+        self.debug = True
 
         self.dsf = 8.0 # down-scaling factor, hardcoded in frontend
 
@@ -63,8 +63,9 @@ class TsdfFusion:
         self.max_weight = 20.0 # This is in 1/variance units, so 1/m^2: variance median is (?) so use 1/(?)
 
         self.voxel_size = 6.0 / 512 # representing a 3m x 3m x 3m (m = meter) room with a dense 512 x 512 x 512 voxel grid
+        # self.voxel_size = 0.02
         self.block_resolution = 16
-        self.block_count = 5000
+        self.block_count = 10000
         self.voxel_length = 0.010  # in m
         self.sdf_trunc = 0.10  # in m
         self.use_old_volume = False
@@ -180,7 +181,7 @@ class TsdfFusion:
                            self.max_depth_sigma_thresh,
                            evaluate=True)
         print("Done evaluating reconstruction.")
-        # exit(0)
+        exit(0)
 
     # builds volume from packet # TODO: build volume from pcl directly.
     def build_volume(self, packet, o3d_intrinsics, masks):
@@ -468,6 +469,7 @@ class TsdfFusion:
                 gt_depth = gt_depth[:-8,:-8]
                 scale = gt_depth.mean() / rendered_depth_map.mean()
                 diff_depth_map = torch.abs(scale * rendered_depth_map - gt_depth)
+                diff_depth_map[gt_depth == 0.0] = 0.0
                 diff_depth_map[diff_depth_map > 2.0] = 2.0 # Truncate outliers to 1m, otw biases metric, this can happen either bcs depth is not estimated or bcs gt depth is wrong. 
                 if self.debug:
                     viz_depth_map(rendered_depth_map, fix_range=False, name="rendered_depth_map")
@@ -475,7 +477,7 @@ class TsdfFusion:
                     viz_depth_map(gt_depth, fix_range=False, name="ground-truth depth")
                     viz_depth_map(diff_depth_map, range=(0,0.5), name="Error depth map after crop", colormap=cv2.COLORMAP_TURBO, invert=False)
                     cv2.waitKey(1)
-                l1 = diff_depth_map.mean().cpu().numpy() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
+                l1 = diff_depth_map[gt_depth != 0.0].mean().cpu().numpy() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
                 total_l1 += l1
 
         if evaluate:
@@ -486,7 +488,7 @@ class TsdfFusion:
             print(f"Dt={dt}; PSNR={psnr}; L1={l1}")
             # data_frame.loc[len(data_frame.index)] = [dt, psnr, l1]
             # data_frame.to_csv("results.csv")
-            with open("results.csv", 'a') as f:
+            with open("output/results.csv", 'a') as f:
                 f.write(f"Dt={dt}; PSNR={psnr}; L1={l1}\n")
 
     def update_history(self, packet):

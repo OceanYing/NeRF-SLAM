@@ -452,10 +452,11 @@ class NerfFusion:
             est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
             ic(est_to_ref_depth_scale)
             diff_depth_map = np.abs(est_to_ref_depth_scale * est_depth - ref_depth)
+            diff_depth_map[ref_depth == 0.0] = 0.0
             diff_depth_map[diff_depth_map > 2.0] = 2.0 # Truncate outliers to 1m, otw biases metric, this can happen either bcs depth is not estimated or bcs gt depth is wrong. 
             if self.viz:
                 viz_depth_map(torch.tensor(diff_depth_map), fix_range=False, name="Depth Error", colormap=cv2.COLORMAP_TURBO, invert=False)
-            l1 = diff_depth_map.mean() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
+            l1 = diff_depth_map[ref_depth != 0.0].mean() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
             total_l1 += l1
             count += 1
 

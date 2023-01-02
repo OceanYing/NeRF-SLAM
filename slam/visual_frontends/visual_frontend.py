@@ -262,7 +262,6 @@ class RaftVisualFrontend(VisualFrontend):
                 cv2.imshow(f'Img{i} normalized', img.permute(1,2,0).cpu().numpy())
 
         if self.last_k is None:
-            ic(k)
             assert k == 0
             assert self.kf_idx == 0
             assert self.last_kf_idx == 0
@@ -1338,6 +1337,10 @@ class RaftVisualFrontend(VisualFrontend):
         else:
             print("Not running global BA...")
             torch.cuda.empty_cache()
+
+        stamps = np.array(list(self.kf_idx_to_f_idx.values()))[..., np.newaxis] * self.args.img_stride
+        ttraj = np.concatenate([stamps[:self.kf_idx+1], self.world_T_body[:self.kf_idx+1].cpu().numpy()], axis=1)
+        np.savetxt(f'{self.args.output}/traj_viokf.txt', ttraj, fmt='%.6f')
 
         self.stop = True
 

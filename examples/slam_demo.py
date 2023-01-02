@@ -57,6 +57,7 @@ def parse_args():
 
     parser.add_argument("--eval", action="store_true", help="Evaluate method.")
 
+    parser.add_argument("--output", type=str, default='output')
     return parser.parse_args()
 
 def run(args):
@@ -191,6 +192,7 @@ def run(args):
 
 if __name__ == '__main__':
     args = parse_args()
+    os.makedirs(args.output, exist_ok=True)
 
     torch.multiprocessing.set_start_method('spawn')
     torch.cuda.empty_cache()
