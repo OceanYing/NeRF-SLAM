@@ -175,8 +175,9 @@ class Open3dGui:
         self.viz.create_window(width=1200, height=680) #create_window(self, window_name='Open3D', width=1920, height=1080, left=50, top=50, visible=True)
 
         self.viz.get_render_option().point_size = 0.001 # in m
-        self.viz.get_render_option().background_color = np.asarray([0, 0, 0]) # Black background
+        # self.viz.get_render_option().background_color = np.asarray([0, 0, 0]) # Black background
         self.viz.get_render_option().light_on = False
+        self.viz.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(0.2))
 
         self.viz.register_key_callback(ord("Q"), self.destroy_window)
         self.viz.register_key_callback(256, self.destroy_window) # esc
@@ -401,7 +402,7 @@ class Open3dGui:
                     raise NotImplementedError
 
     def viz_data_packet(self, packet):
-        print("Visualizing DATA packet.")
+        # print("Visualizing DATA packet.")
 
         if type(packet) is Values:
             values = packet
@@ -441,10 +442,10 @@ class Open3dGui:
 
         packet = packet[1]
         if packet is None:
-            print("O3d packet from SLAM module is None...")
+            # print("O3d packet from SLAM module is None...")
             return True
 
-        print("Visualizing SLAM packet.")
+        # print("Visualizing SLAM packet.")
         if self.evaluate and packet["is_last_frame"] and not "cam0_images" in packet:
             print("Last Frame reached, and no global BA")
             self.evaluate_metrics()
@@ -509,7 +510,7 @@ class Open3dGui:
             print("Gui packet from Fusion module is None...")
             return True
 
-        print("Visualizing Gui packet from Fusion")
+        # print("Visualizing Gui packet from Fusion")
         mesh = packet["mesh"]
         if mesh:
             self.viz_mesh(mesh.create_mesh())
@@ -605,7 +606,7 @@ class Open3dGui:
             body_sigma_actor = self.create_sphere_actor(body_pose, radius=S.max().sqrt().item())
 
             s = S.max().sqrt().item()
-            ic(s)
+            # ic(s)
             max_s = 0.3
             s_norm =  s / max_s if s < max_s else 1.0
             color = self.colormap(s_norm)[:3]

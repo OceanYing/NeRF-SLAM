@@ -105,7 +105,7 @@ def run(args):
             slam_module.register_output_queue(slam_output_queue_for_fusion)
             fusion_module.register_input_queue("slam", slam_output_queue_for_fusion)
         
-        if (args.fusion == 'nerf' and not slam) or (args.fusion != 'nerf' and args.eval):
+        if (args.fusion == 'nerf' and not slam): # or (args.fusion != 'nerf' and args.eval):
             # Only used for evaluation, or in case we do not use slam (for nerf)
             data_provider_module.register_output_queue(data_for_fusion_output_queue)
             fusion_module.register_input_queue("data", data_for_fusion_output_queue)

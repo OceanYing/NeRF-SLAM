@@ -17,7 +17,7 @@ class NeRFDataset(Dataset):
         super().__init__("Nerf", args, device)
         self.parse_metadata()
         # self._build_dataset_index() # Loads all the data first, and then streams.
-        self.tqdm = tqdm(total=self.__len__()) # Call after parsing metadata
+        # self.tqdm = tqdm(total=self.__len__()) # Call after parsing metadata
 
     def get_cam_calib(self):
         w, h   = self.json["w"],    self.json["h"]
@@ -165,7 +165,7 @@ class NeRFDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, k):
-        self.tqdm.update(1)
+        # self.tqdm.update(1)
         return self._get_data_packet(k) if self.data_packets is None else self.data_packets[k]
 
 

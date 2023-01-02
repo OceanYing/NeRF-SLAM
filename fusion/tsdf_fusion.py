@@ -110,7 +110,7 @@ class TsdfFusion:
 
         packet = packet[1]
         if packet is None:
-            print("Fusion packet from SLAM module is None...")
+            # print("Fusion packet from SLAM module is None...")
             return True
 
         if self.evaluate and packet["is_last_frame"] and not "cam0_images" in packet:
@@ -180,6 +180,7 @@ class TsdfFusion:
                            self.max_depth_sigma_thresh,
                            evaluate=True)
         print("Done evaluating reconstruction.")
+        # exit(0)
 
     # builds volume from packet # TODO: build volume from pcl directly.
     def build_volume(self, packet, o3d_intrinsics, masks):
@@ -368,7 +369,7 @@ class TsdfFusion:
                 width_px=W,
                 height_px=H)
 
-            print(f"Casting Rays for camera {ix}")
+            # print(f"Casting Rays for camera {ix}")
             render = None
             if self.use_old_volume:
                 if self.scene:
@@ -428,13 +429,13 @@ class TsdfFusion:
                 rendered_depth_map = torch.tensor(
                     render['depth'].cpu().numpy(), device=depth.device, dtype=depth.dtype).squeeze()
 
-            if self.debug:
-                cv2.imshow("Rendered depth", rendered_depth.colorize_depth(
-                    self.depth_scale, self.min_depth, self.max_depth).as_tensor().cpu().numpy())
-                cv2.imshow("Rendered color?", rendered_c.as_tensor().cpu().numpy())
-                cv2.imshow('rendered color', sum_colors.cpu().numpy())
-                cv2.imshow('actual color', color.cpu().numpy())
-                cv2.imshow('rendered weights', sum_weights.cpu().numpy())
+            if False:
+                # cv2.imshow("Rendered depth", rendered_depth.colorize_depth(
+                #     self.depth_scale, self.min_depth, self.max_depth).as_tensor().cpu().numpy())
+                # cv2.imshow("Rendered color?", rendered_c.as_tensor().cpu().numpy())
+                # cv2.imshow('rendered color', sum_colors.cpu().numpy())
+                # cv2.imshow('actual color', color.cpu().numpy())
+                # cv2.imshow('rendered weights', sum_weights.cpu().numpy())
                 if self.use_old_volume:
                     cv2.imshow("rend_depth_map", render['t_hit'].numpy())
                     rendered_depth_mask = (np.abs(render['geometry_ids'].numpy()) > 0).astype(float)
@@ -443,13 +444,13 @@ class TsdfFusion:
                 viz_depth_map(rendered_depth_map, fix_range=False, name="rendered_depth_map")
                 viz_depth_map(depth, fix_range=False, name="estimated_depth_map")
                 viz_depth_map(gt_depth, fix_range=False, name="ground-truth depth")
-                viz_depth_sigma(depth_sigma[None], name="estimated_depth_map sigma",
-                                fix_range=True,
-                                bg_img=color.permute(2,0,1)[None],
-                                sigma_thresh=max_depth_sigma_thresh)
-                scale = gt_depth.mean() / rendered_depth_map.mean()
-                diff_depth_map = torch.abs(scale * rendered_depth_map - gt_depth)
-                viz_depth_map(diff_depth_map, fix_range=False, name="Error depth map", colormap=cv2.COLORMAP_TURBO, invert=False)
+                # viz_depth_sigma(depth_sigma[None], name="estimated_depth_map sigma",
+                #                 fix_range=True,
+                #                 bg_img=color.permute(2,0,1)[None],
+                #                 sigma_thresh=max_depth_sigma_thresh)
+                # scale = gt_depth.mean() / rendered_depth_map.mean()
+                # diff_depth_map = torch.abs(scale * rendered_depth_map - gt_depth)
+                # viz_depth_map(diff_depth_map, range=(0,0.5), name="Error depth map", colormap=cv2.COLORMAP_TURBO, invert=False)
                 cv2.waitKey(1)
 
 
@@ -469,7 +470,10 @@ class TsdfFusion:
                 diff_depth_map = torch.abs(scale * rendered_depth_map - gt_depth)
                 diff_depth_map[diff_depth_map > 2.0] = 2.0 # Truncate outliers to 1m, otw biases metric, this can happen either bcs depth is not estimated or bcs gt depth is wrong. 
                 if self.debug:
-                    viz_depth_map(diff_depth_map, fix_range=False, name="Error depth map after crop", colormap=cv2.COLORMAP_TURBO, invert=False)
+                    viz_depth_map(rendered_depth_map, fix_range=False, name="rendered_depth_map")
+                    viz_depth_map(depth, fix_range=False, name="estimated_depth_map")
+                    viz_depth_map(gt_depth, fix_range=False, name="ground-truth depth")
+                    viz_depth_map(diff_depth_map, range=(0,0.5), name="Error depth map after crop", colormap=cv2.COLORMAP_TURBO, invert=False)
                     cv2.waitKey(1)
                 l1 = diff_depth_map.mean().cpu().numpy() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
                 total_l1 += l1
@@ -480,8 +484,10 @@ class TsdfFusion:
             psnr = total_psnr / (len(viz_idx) or 1)
             l1 = total_l1 / (len(viz_idx) or 1)
             print(f"Dt={dt}; PSNR={psnr}; L1={l1}")
-            data_frame.loc[len(data_frame.index)] = [dt, psnr, l1]
-            data_frame.to_csv("results.csv")
+            # data_frame.loc[len(data_frame.index)] = [dt, psnr, l1]
+            # data_frame.to_csv("results.csv")
+            with open("results.csv", 'a') as f:
+                f.write(f"Dt={dt}; PSNR={psnr}; L1={l1}\n")
 
     def update_history(self, packet):
         if packet["is_last_frame"]:
@@ -531,7 +537,7 @@ class TsdfFusion:
             packet["cam0_intrinsics"]    += [h["cam0_intrinsics"]]
             packet["calibs"]             += [h["calibs"]]
             # TODO: WHY ARE WE DIVIDING? SHOULDN'T IT BE MULTIPLYING?!? 
-            packet["gt_depths"]          += [torch.tensor(h["gt_depths"], device=h["cam0_images"].device, dtype=torch.float32).permute(2,0,1) * h["calibs"].depth_scale]
+            packet["gt_depths"]          += [h["gt_depths"].clone().detach() * h["calibs"].depth_scale]
         packet["viz_idx"]            = torch.stack(packet["viz_idx"]           )
         packet["cam0_poses"]         = torch.stack(packet["cam0_poses"]        )
         packet["cam0_depths_cov_up"] = torch.stack(packet["cam0_depths_cov_up"])
