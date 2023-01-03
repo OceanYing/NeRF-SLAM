@@ -5,7 +5,7 @@ from lietorch import SE3
 
 import numpy as np
 import cv2
-
+from tqdm import tqdm
 from icecream import ic
 
 from utils.flow_viz import *
@@ -51,7 +51,7 @@ class NerfFusion:
         self.iters = 1
         self.iters_if_none = 1
         self.total_iters = 0
-        self.stop_iters  = 25000
+        self.stop_iters  = 10000
         self.old_training_step = 0
 
         mode = ngp.TestbedMode.Nerf
@@ -111,12 +111,13 @@ class NerfFusion:
         self.annealing_rate = 0.95
 
         self.evaluate = args.eval
-        self.eval_every_iters = 200
+        self.eval_every_iters = 2000
         if self.evaluate:
             self.df = pandas.DataFrame(columns=['Iter', 'Dt','PSNR', 'L1', 'count'])
 
         # Fit vol once to init gui
         self.fit_volume_once()
+        self.tqdm = tqdm(total=self.stop_iters)
 
     def process_data(self, packet):
         # GROUND_TRUTH Fitting
@@ -148,8 +149,10 @@ class NerfFusion:
         # Slam output is None, just fit for some iters
         slam_packet = packet[1]
         if slam_packet is None:
-            print("Fusion packet from SLAM module is None...")
+            # print("Fusion packet from SLAM module is None...")
             return True
+
+        # print("Fusion packet from SLAM module", slam_packet["viz_idx"])
 
         if slam_packet["is_last_frame"]:
             return True
@@ -282,6 +285,8 @@ class NerfFusion:
         principal_point = intrinsics[2:]
 
         # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation....
+        for i, id in enumerate(frame_ids):
+            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i]]
         self.ngp.nerf.training.update_training_images(frame_ids.cpu().numpy().tolist(), 
                                                       list(poses[:, :3, :4]), 
                                                       list(images), 
@@ -289,7 +294,9 @@ class NerfFusion:
                                                       list(depths_cov), resolution, principal_point, focal_length, depth_scale, depth_cov_scale)
 
     def fit_volume(self):
-        #print(f"Fitting volume for {self.iters} iters")
+        self.tqdm.update(self.iters)
+        self.tqdm.set_description(f"Fitting volume for {self.iters} iters")
+
         self.fps = 30
         for _ in range(self.iters):
             self.fit_volume_once()
@@ -450,7 +457,7 @@ class NerfFusion:
                 viz_depth_map(torch.tensor(est_depth, dtype=torch.float32, device="cpu"), fix_range=False, name="Est Depth", colormap=cv2.COLORMAP_TURBO, invert=False)
 
             est_to_ref_depth_scale = ref_depth.mean() / est_depth.mean()
-            ic(est_to_ref_depth_scale)
+            # ic(est_to_ref_depth_scale)
             diff_depth_map = np.abs(est_to_ref_depth_scale * est_depth - ref_depth)
             diff_depth_map[ref_depth == 0.0] = 0.0
             diff_depth_map[diff_depth_map > 2.0] = 2.0 # Truncate outliers to 1m, otw biases metric, this can happen either bcs depth is not estimated or bcs gt depth is wrong. 
@@ -474,7 +481,7 @@ class NerfFusion:
         l1 = total_l1 / (count or 1)
         print(f"Iter={self.total_iters}; Dt={dt}; PSNR={psnr}; L1={l1}; count={count}")
         self.df.loc[len(self.df.index)] = [self.total_iters, dt, psnr, l1, count]
-        self.df.to_csv("results.csv")
+        self.df.to_csv(f"{self.args.output}/results_ngp.csv")
 
         # Reset the state
         self.ngp.shall_train                 = tmp_shall_train
