@@ -68,7 +68,7 @@
 
 Clone repo with submodules:
 ```
-git clone https://github.com/ToniRV/NeRF-SLAM.git --recurse-submodules
+git clone https://github.com/OceanYing/NeRF-SLAM.git --recurse-submodules
 git submodule update --init --recursive
 ```
 
@@ -99,7 +99,9 @@ cd build_gtsam
 make python-install
 ```
 
-Install:
+Note: in step ```cmake --build build_gtsam --config RelWithDebInfo -j```, you may meet the error [Issue23 in original NeRF-SLAM branch](https://github.com/ToniRV/NeRF-SLAM/issues/23#issue-1524503661) caused by the python parser(As have been told in [Installation issues 3](https://github.com/OceanYing/NeRF-SLAM#installation-issues)). You may change const std::vector<const gtsam::Matrix&>& to const std::vector<gtsam::Matrix>& use & as pointer is not proper define of std::vector.
+
+Finally install:
 ```
 python setup.py install
 ```
