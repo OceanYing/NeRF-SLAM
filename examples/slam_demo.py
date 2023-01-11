@@ -41,7 +41,7 @@ def parse_args():
 
     #parser.add_argument("--gui", action="store_true", help="Run the testbed GUI interactively.")
     parser.add_argument("--slam", action="store_true", help="Run SLAM.")
-    parser.add_argument("--fusion", type=str, default='', choices=['tsdf', 'sigma', 'nerf', ''],
+    parser.add_argument("--fusion", type=str, default='nerf', choices=['tsdf', 'sigma', 'nerf', ''],
                         help="Fusion approach ('' for none):\n\
                             -`tsdf' classical tsdf-fusion using Open3D\n \
                             -`sigma' tsdf-fusion with uncertainty values (Rosinol22wacv)\n \

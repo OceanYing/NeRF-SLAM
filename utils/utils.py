@@ -103,8 +103,8 @@ def get_bias(euroc_df):
 # offse's default is 0.5 bcs we scale/offset poses to 1.0/0.5 before feeding to nerf
 def nerf_matrix_to_ngp(nerf_matrix, scale=1.0, offset=0.5): 
     result = nerf_matrix.copy()
-    result[:3, 1] *= -1
-    result[:3, 2] *= -1
+    # result[:3, 1] *= -1   # TODO: bugs in author's office0/transforms.json (It is actually COLMAP pose instead of nerf pose)
+    # result[:3, 2] *= -1
     result[:3, 3] = result[:3, 3] * scale + offset
 
     # Cycle axes xyz<-yzx

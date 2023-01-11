@@ -7,6 +7,7 @@ import numpy as np
 import cv2
 from tqdm import tqdm
 from icecream import ic
+import imageio
 
 from utils.flow_viz import *
 
@@ -125,13 +126,21 @@ class NerfFusion:
 
         calib = packet["calibs"][0]
         scale, offset = get_scale_and_offset(calib.aabb)
-        gt_depth_scale = calib.depth_scale
+        gt_depth_scale = calib.depth_scale  # 1m meter -- 65535.0
+
+        # packet["poses"]            = scale_offset_poses(np.linalg.inv(packet["poses"]), scale=scale, offset=offset)
+        # packet["images"]           = (packet["images"].astype(np.float32) / 255.0)
+        # packet["depths"]           = (packet["depths"].astype(np.float32))     # seed to InstantNGP
+        # packet["gt_depths"]        = (packet["depths"].astype(np.float32))                              # stored used for evaluation
+        # packet["depth_scale"]      = gt_depth_scale * scale
+        # packet["depths_cov"]       = np.ones_like(packet["depths"])
+        # packet["depths_cov_scale"] = 1.0
 
         packet["poses"]            = scale_offset_poses(np.linalg.inv(packet["poses"]), scale=scale, offset=offset)
         packet["images"]           = (packet["images"].astype(np.float32) / 255.0)
-        packet["depths"]           = (packet["depths"].astype(np.float32))
-        packet["gt_depths"]        = (packet["depths"].astype(np.float32))
-        packet["depth_scale"]      = gt_depth_scale * scale
+        packet["depths"]           = (packet["depths"].astype(np.float32) * gt_depth_scale)         # seed to InstantNGP
+        packet["gt_depths"]        = (packet["depths"].astype(np.float32) * gt_depth_scale * scale) # stored used for evaluation
+        packet["depth_scale"]      = scale  # will be added to packet["depths"] in instantNGP
         packet["depths_cov"]       = np.ones_like(packet["depths"])
         packet["depths_cov_scale"] = 1.0
 
@@ -161,8 +170,8 @@ class NerfFusion:
         viz_idx        = slam_packet["viz_idx"]
         cam0_T_world   = slam_packet["cam0_poses"]
         images         = slam_packet["cam0_images"]
-        idepths_up     = slam_packet["cam0_idepths_up"]
-        depths_cov_up  = slam_packet["cam0_depths_cov_up"]
+        idepths_up     = slam_packet["cam0_idepths_up"]     # estinmated inverse_depth (near is light and far is dark) (x = 1 / x)
+        depths_cov_up  = slam_packet["cam0_depths_cov_up"]  # estinmated depth uncertainty
         calibs         = slam_packet["calibs"]
         gt_depths      = slam_packet["gt_depths"]
 
@@ -205,17 +214,17 @@ class NerfFusion:
         cam0_T_world = SE3(cam0_T_world).matrix().contiguous().cpu().numpy()
         world_T_cam0 = scale_offset_poses(np.linalg.inv(cam0_T_world), scale=scale, offset=offset)
         images = (images.permute(0,2,3,1).float() / 255.0)
-        depths = (1.0 / idepths_up[..., None])
+        depths = (1.0 / idepths_up[..., None])      # inverse the inverse_depth
         depths_cov = depths_cov_up[..., None]
         gt_depths = gt_depths.permute(0, 2, 3, 1) * gt_depth_scale * scale
 
-        # This is extremely slow.
-        # TODO: we could do it in cpp/cuda: send the uint8_t image instead of float, and call srgb_to_linear inside the convert_rgba32 function
-        if images.shape[2] == 4:
-            images[...,0:3] = srgb_to_linear(images[...,0:3], self.device)
-            images[...,0:3] *= images[...,3:4] # Pre-multiply alpha
-        else:
-            images = srgb_to_linear(images, self.device)
+        # # This is extremely slow.
+        # # TODO: we could do it in cpp/cuda: send the uint8_t image instead of float, and call srgb_to_linear inside the convert_rgba32 function
+        # if images.shape[-1] == 4:
+        #     images[...,0:3] = srgb_to_linear(images[...,0:3], self.device)
+        #     images[...,0:3] *= images[...,3:4] # Pre-multiply alpha
+        # else:
+        #     images = srgb_to_linear(images, self.device)
 
         data_packets = {"k":                viz_idx,
                     "poses":            world_T_cam0,  # needs to be c2w
@@ -286,12 +295,15 @@ class NerfFusion:
 
         # TODO: we need to restore the self.ref_frames[frame_id] = [image, gt, etc] for evaluation....
         for i, id in enumerate(frame_ids):
-            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i]]
-        self.ngp.nerf.training.update_training_images(frame_ids.cpu().numpy().tolist(), 
-                                                      list(poses[:, :3, :4]), 
-                                                      list(images), 
-                                                      list(depths), 
-                                                      list(depths_cov), resolution, principal_point, focal_length, depth_scale, depth_cov_scale)
+            self.ref_frames[id.item()] = [images[i], depths[i], gt_depths[i], depths_cov[i], poses[i, :, :]]
+        
+        # if frame_ids[-1] >= 98:
+        #     print(frame_ids[0], frame_ids[-1])
+        self.ngp.nerf.training.update_training_images(list(frame_ids), # frame_ids.cpu().numpy().tolist(), 
+                                                    list(poses[:, :3, :4]), 
+                                                    list(images), 
+                                                    list(depths), 
+                                                    list(depths_cov), resolution, principal_point, focal_length, depth_scale, depth_cov_scale)
 
     def fit_volume(self):
         self.tqdm.update(self.iters)
@@ -408,10 +420,16 @@ class NerfFusion:
 
         stride = 2
 
+        save_dir = "output/" + str(self.total_iters)
+        save_gt_dir = "output/" + "GT"
+        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(save_gt_dir, exist_ok=True)
+
         # Evaluate
         count = 0
         total_l1 = 0
         total_psnr = 0
+        save_gt_flag = True
         assert(len(self.ref_frames) == self.ngp.nerf.training.n_images_for_training)
         for i in range(0, self.ngp.nerf.training.n_images_for_training, stride):
             # Use GT trajectory for evaluation to have consistent metrics.
@@ -466,6 +484,10 @@ class NerfFusion:
             l1 = diff_depth_map[ref_depth != 0.0].mean() * 100 # From m to cm AND use the mean (as in Nice-SLAM)
             total_l1 += l1
             count += 1
+            
+            imageio.imwrite(os.path.join(save_dir, "ref_image_{:0>4d}.jpg".format(i)), np.uint8(ref_image[..., :3]*255))
+            imageio.imwrite(os.path.join(save_dir, "est_image_{:0>4d}.jpg".format(i)), np.uint8(est_image[..., :3]*255))
+            # imageio.imwrite(os.path.join(save_dir, "est_image_{:0>4d}_{:.4f}.jpg".format(i, psnr)), est_image[..., :3])
 
             if self.viz:
                 ref_image_viz = cv2.cvtColor(ref_image, cv2.COLOR_BGRA2RGBA) # Required for Nerf Fusion, perhaps we can put it in there
